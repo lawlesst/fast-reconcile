@@ -67,7 +67,10 @@ def search(raw_query):
                 return out
         #Result spec of the list comprehension
         title = item.get('title', 'No title found')
-        issn = item.get('prism_issn', 'random')
+        issn = item.get('prism_issn')
+        #Skip results without an ISSN for now.
+        if issn is None:
+            continue
         #Give the resource a crossref dummy issn uri for now.
         pid = 'http://id.crossref.org/issn/' + issn
         #import ipdb; ipdb.set_trace()
