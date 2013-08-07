@@ -1,71 +1,42 @@
 """
+A Google Refine reconcillation servce for the api provided by
+the JournalTOCs project.
+
+See API documentation:
+http://www.journaltocs.ac.uk/api_help.php?subAction=journals
+
 An example reconciliation service API for Google Refine 2.0.
 
 See http://code.google.com/p/google-refine/wiki/ReconciliationServiceApi.
 """
-import re
 
-from flask import Flask, request, jsonify, json
+from flask import Flask
+from flask import request
+from flask import jsonify
+
+import json
+from operator import itemgetter
+import urllib
+
+import feedparser
+#For scoring results
+from fuzzywuzzy import fuzz
+
 app = Flask(__name__)
 
 # Basic service metadata. There are a number of other documented options
 # but this is all we need for a simple service.
 metadata = {
-    "name": "Presidential Reconciliation Service",
-    "defaultTypes": [{"id": "/people/presidents", "name": "US President"}],
-    }
+    "name": "JournalTOC Reconciliation Service",
+    "defaultTypes": [{"id": "http://purl.org/ontology/bibo/Periodical", "name": "bibo:Periodical"}],
+}
 
-# The data we'll match against.
-presidents = [
-    "George Washington", "John Adams", "Thomas Jefferson", "James Madison",
-    "James Monroe", "John Quincy Adams", "Andrew Jackson", "Martin Van Buren",
-    "William Henry Harrison", "John Tyler", "James K. Polk", "Zachary Taylor",
-    "Millard  Fillmore", "Franklin Pierce", "James Buchanan",
-    "Abraham Lincoln", "Andrew Jackson", "Ulysses S. Grant",
-    "Rutherford B. Hayes", "James A. Garfield", "Chester A. Arthur",
-    "Grover Cleveland", "Benjamin Harrison", "William McKinley",
-    "Theodore Roosevelt", "William Howard Taft", "Woodrow Wilson",
-    "Warren G. Harding", "Calvin Coolidge", "Herbert Hoover",
-    "Franklin D. Roosevelt", "Harry S. Truman", "Dwight D. Eisenhower",
-    "John F. Kennedy", "Lyndon B. Johnson", "Richard Nixon", "Gerald Ford",
-    "Jimmy Carter", "Ronald Reagan", "George H. W. Bush", "Bill Clinton",
-    "George W. Bush", "Barack Obama",
-    ]
-
-
-def search(query):
-    """
-    Do a simple fuzzy match of US presidents, returning results in
-    Refine reconciliation API format.
-    """
-    pattern = re.compile(query, re.IGNORECASE)
-    matches = []
-
-    for (id, name) in zip(xrange(0, len(presidents)), presidents):
-        if pattern.search(name):
-            # If the name matches the query exactly then it's a
-            # (near-)certain match, otherwise it could be ambiguous.
-            if name == query:
-                match = True
-            else:
-                match = False
-
-            matches.append({
-                "id": id,
-                "name": name,
-                "score": 100,
-                "match": match,
-                "type": [
-                    {"id": "/people/presidents",
-                     "name": "US President"}]})
-
-    return matches
+api_base_url = 'http://www.journaltocs.ac.uk/api/journals/{0}?output=journals&user={1}'
 
 
 def jsonpify(obj):
     """
-    Like jsonify but wraps result in a JSONP callback if a 'callback'
-    query param is supplied.
+    Helper to support JSONP
     """
     try:
         callback = request.args['callback']
@@ -76,10 +47,61 @@ def jsonpify(obj):
         return jsonify(obj)
 
 
+def search(raw_query):
+    """
+    Hit the JournalTOC api for journal names.
+    """
+    out = []
+    try:
+        query = urllib.quote(raw_query)
+    except Exception:
+        return []
+    api_url = api_base_url.format(query, TOC_USER)
+    print api_url
+    api_results = feedparser.parse(api_url)
+    for position, item in enumerate(api_results['entries']):
+        #Check for no results
+        #ToDo - improve this.
+        if position == 0:
+            if item.get('summary_detail', {}).get('value').lower().startswith('0 hits'):
+                return out
+        #Result spec of the list comprehension
+        title = item.get('title', 'No title found')
+        issn = item.get('prism_issn', 'random')
+        #Give the resource a crossref dummy issn uri for now.
+        pid = 'http://id.crossref.org/issn/' + issn
+        #import ipdb; ipdb.set_trace()
+        if title.lower() == raw_query.lower():
+            match = True
+        else:
+            match = False
+        #Construct a score using FuzzyWuzzy's token set ratio.
+        #https://github.com/seatgeek/fuzzywuzzy
+        score = fuzz.token_sort_ratio(raw_query, title)
+        out.append({
+            "id": pid,
+            "name": title,
+            "score": score,
+            "match": match,
+            "type": [
+                {
+                    "id": "http://purl.org/ontology/bibo/Periodical",
+                    "name": "bibo:Periodical",
+                }
+            ]
+        })
+    #Sort this list by score
+    sorted_out = sorted(out, key=itemgetter('score'), reverse=True)
+    return sorted_out
+
+
 @app.route("/reconcile", methods=['POST', 'GET'])
 def reconcile():
-    # If a single 'query' is provided do a straightforward search.
+    #Look first for form-param requests.
     query = request.form.get('query')
+    if query is None:
+        #Then normal get param.s
+        query = request.args.get('query')
     if query:
         # If the 'query' param starts with a "{" then it is a JSON object
         # with the search string as the 'query' member. Otherwise,
@@ -88,7 +110,6 @@ def reconcile():
             query = json.loads(query)['query']
         results = search(query)
         return jsonpify({"result": results})
-
     # If a 'queries' parameter is supplied then it is a dictionary
     # of (key, query) pairs representing a batch of queries. We
     # should return a dictionary of (key, results) pairs.
@@ -105,4 +126,16 @@ def reconcile():
     return jsonpify(metadata)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    from optparse import OptionParser
+    oparser = OptionParser()
+    oparser.add_option('-d', '--debug', action='store_true', default=False)
+    oparser.add_option('-u', '--user', dest='api_user', default=False)
+    opts, args = oparser.parse_args()
+    if opts.api_user is False:
+        raise Exception("No API user provided.\
+                        Pass as --user.\
+                        Typically an email address.")
+    else:
+        TOC_USER = opts.api_user
+    app.debug = opts.debug
+    app.run(host='0.0.0.0')
