@@ -65,7 +65,6 @@ def search(raw_query):
         if position == 0:
             if item.get('summary_detail', {}).get('value').lower().startswith('0 hits'):
                 return out
-        #Result spec of the list comprehension
         title = item.get('title', 'No title found')
         issn = item.get('prism_issn')
         #Skip results without an ISSN for now.
@@ -73,7 +72,6 @@ def search(raw_query):
             continue
         #Give the resource a crossref dummy issn uri for now.
         pid = 'http://id.crossref.org/issn/' + issn
-        #import ipdb; ipdb.set_trace()
         if title.lower() == raw_query.lower():
             match = True
         else:
