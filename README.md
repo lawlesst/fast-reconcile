@@ -7,4 +7,4 @@ Run as:
 $ python reconcile.py python reconcile.py --debug -u your_api_email@none.com
 ~~~~
 
-The [original code](https://github.com/mikejs/reconcile-demo) for a demo reconciliation service was written by Michael Stephens.
+Michael Stephens wrote a [demo reconcilliation service](https://github.com/mikejs/reconcile-demo) that this code is based on.
