@@ -21,18 +21,28 @@ import urllib
 import feedparser
 #For scoring results
 from fuzzywuzzy import fuzz
+import requests
+import requests_cache
+requests_cache.install_cache('fast_corporate_cache')
+
+import text
 
 app = Flask(__name__)
 
 # Basic service metadata. There are a number of other documented options
 # but this is all we need for a simple service.
 metadata = {
-    "name": "JournalTOC Reconciliation Service",
-    "defaultTypes": [{"id": "http://purl.org/ontology/bibo/Periodical", "name": "bibo:Periodical"}],
+    "name": "Fast Corporate Name Reconciliation Service",
+    "defaultTypes": [{"id": "http://www.w3.org/2004/02/skos/core#", "name": "skos:Concept"}],
 }
 
-api_base_url = 'http://www.journaltocs.ac.uk/api/journals/{0}?output=journals&user={1}'
+api_base_url = 'http://fast.oclc.org/searchfast/fastsuggest'
 
+fast_uri_base = 'http://id.worldcat.org/fast/{0}'
+def make_uri(fast_id):
+    fid = fast_id.lstrip('fst').lstrip('0')
+    fast_uri = fast_uri_base.format(fid)
+    return fast_uri
 
 def jsonpify(obj):
     """
@@ -46,59 +56,94 @@ def jsonpify(obj):
     except KeyError:
         return jsonify(obj)
 
+#skip these terms for lookup
+skip_words = [
+    'university',
+    'school',
+    'of',
+    'the'
+]
+
 
 def search(raw_query):
     """
-    Hit the JournalTOC api for journal names.
+    Hit the FAST API for names.
     """
     out = []
-    try:
-        query = urllib.quote(raw_query)
-    except Exception:
-        return []
-    api_url = api_base_url.format(query, TOC_USER)
-    print api_url
-    api_results = feedparser.parse(api_url)
-    for position, item in enumerate(api_results['entries']):
-        #Check for no results
-        #ToDo - improve this.
-        if position == 0:
-            if item.get('summary_detail', {}).get('value').lower().startswith('0 hits'):
-                return out
-        #Result spec of the list comprehension
-        title = item.get('title', 'No title found')
-        issn = item.get('prism_issn')
-        #Skip results without an ISSN for now.
-        if issn is None:
+    #Hit the suggest api for each token
+    #tokens = [text.normalize(t) for t in text.tokenize(raw_query)]
+    tokens = []
+    done = False
+    query_scrubbed = text.normalize(raw_query.lower().replace('the university of', 'university of'))
+    #minimum of 4 characters
+    for i in xrange(4, len(query_scrubbed) + 1, 2):
+        tokens.append(''.join(query_scrubbed[:i]))
+    for token in tokens:
+        if done is True:
+            break
+        if token in skip_words:
             continue
-        #Give the resource a crossref dummy issn uri for now.
-        pid = 'http://id.crossref.org/issn/' + issn
-        #import ipdb; ipdb.set_trace()
-        if title.lower() == raw_query.lower():
-            match = True
-        else:
+        params = {
+            'query': token,
+            #corporate names only for now
+            'queryIndex': 'suggest10',
+            'rows': 30,
+            'wt': 'json',
+            'queryReturn': 'suggestall,idroot,auth',
+            'suggest': 'autoSubject',
+        }
+        try:
+            resp = requests.get(api_base_url, params=params)
+            print resp.url
+            results = resp.json()
+        except Exception, e:
+            print e
+        for position, item in enumerate(results['response']['docs']):
             match = False
-        #Construct a score using FuzzyWuzzy's token set ratio.
-        #https://github.com/seatgeek/fuzzywuzzy
-        score = fuzz.token_sort_ratio(raw_query, title)
-        out.append({
-            "id": pid,
-            "name": title,
-            "score": score,
-            "match": match,
-            "type": [
-                {
-                    "id": "http://purl.org/ontology/bibo/Periodical",
-                    "name": "bibo:Periodical",
-                }
-            ]
-        })
+            score2 = 0
+            name = item.get('auth')
+            score = fuzz.ratio(raw_query, name)
+            #Try the alternate if the score is low:
+            if score < 50:
+                alternate = item.get('suggestall')
+                try:
+                    alt = alternate[0]
+                    score2 = fuzz.ratio(raw_query, alt)
+                except IndexError:
+                    pass
+            high_score = max(score, score2)
+            pid = item.get('idroot')
+            #skip low scores
+            if high_score < 50:
+                continue
+            if text.normalize(name) == text.normalize(raw_query):
+                match = True
+            resource = {
+                "id": make_uri(pid),
+                "name": name,
+                "score": score,
+                "match": match,
+                "type": [
+                    {
+                        "id": "http://www.w3.org/2004/02/skos/core#",
+                        "name": "skos:Concept",
+                    }
+                ]
+            }
+            #The FAST service returns many duplicates.
+            if resource not in out:
+                out.append(resource)
+            #Break out of the query loop if we've found a good candidate
+            if (match is True) or (high_score > 90):
+                done = True
+                break
     #Sort this list by score
     sorted_out = sorted(out, key=itemgetter('score'), reverse=True)
-    return sorted_out
+    #Return top 5 matches
+    return sorted_out[:5]
 
 
-@app.route("/reconcile", methods=['POST', 'GET'])
+@app.route("/fast-corporate/reconcile", methods=['POST', 'GET'])
 def reconcile():
     #Look first for form-param requests.
     query = request.form.get('query')
