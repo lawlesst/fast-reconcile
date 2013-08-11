@@ -34,6 +34,8 @@ def normalize(text):
     text = u''.join(filtered)
     while '  ' in text:
         text = text.replace('  ', ' ')
+    #remove hyphens
+    text = text.replace('-', ' ')
     text = text.strip()
     return ucnorm('NFKC', text)
 

@@ -78,21 +78,18 @@ def search(raw_query):
     tokens = []
     done = False
     query_scrubbed = text.normalize(raw_query).replace('the university of', 'university of').strip()
-    print query_scrubbed, '****'
     #minimum of 4 characters
     for i in xrange(4, len(query_scrubbed) + 2, 2):
         tokens.append(''.join(query_scrubbed[:i]))
-    for token in tokens:
+    for token in [query_scrubbed]:
         if done is True:
             break
         if token in skip_words:
             continue
         try:
             #FAST api requires spaces to be encoded as %20 rather than +
-            url = api_base_url + '?query=' + urllib.quote(token) + '&rows=30&queryReturn=suggestall%2Cidroot%2Cauth&suggest=autoSubject&queryIndex=suggest10&wt=json'
-            print url
+            url = api_base_url + '?query=' + urllib.quote(token) + '&rows=30&queryReturn=suggestall%2Cidroot%2Cauth%2cscore&suggest=autoSubject&queryIndex=suggest10&wt=json'
             resp = requests.get(url)
-            print resp.url
             results = resp.json()
         except Exception, e:
             print e
@@ -100,23 +97,17 @@ def search(raw_query):
             match = False
             score2 = 0
             name = item.get('auth')
-            score = fuzz.token_sort_ratio(raw_query, name)
-            #Try the alternate if the score is low:
-            alt = ''
-            if score < 90:
-                alternate = item.get('suggestall')
-                try:
-                    alt = alternate[0]
-                    score2 = fuzz.token_sort_ratio(raw_query, alt)
-                except IndexError:
-                    pass
-            high_score = max(score, score2)
-            print raw_query, name.encode('utf-8'), alt.encode('utf-8'), score, score2
+            alternate = item.get('suggestall')
+            score = item.get('score')
+            if (len(alternate) > 0):
+                alt = alternate[0]
+            else:
+                alt = ''
             pid = item.get('idroot')
-            #skip low scores
-            if high_score < 90:
-                continue
-            if text.normalize(name) == text.normalize(raw_query):
+            normal_query = text.normalize(raw_query)
+            if normal_query == text.normalize(name):
+                match = True
+            elif normal_query == text.normalize(alt):
                 match = True
             resource = {
                 "id": make_uri(pid),
@@ -134,13 +125,12 @@ def search(raw_query):
             if resource not in out:
                 out.append(resource)
             #Break out of the query loop if we've found a good candidate
-            if (match is True) or (high_score > 90):
+            if (match is True):
                 done = True
                 break
     #Sort this list by score
     sorted_out = sorted(out, key=itemgetter('score'), reverse=True)
-    #Return top 5 matches
-    return sorted_out[:5]
+    return sorted_out
 
 
 @app.route("/fast-corporate/reconcile", methods=['POST', 'GET'])
