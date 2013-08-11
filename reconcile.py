@@ -58,8 +58,11 @@ def jsonpify(obj):
 
 #skip these terms for lookup
 skip_words = [
-    'university',
-    'school',
+    'the university of',
+    'univ',
+    'univer',
+    'universi',
+    'university'
     'of',
     'the'
 ]
@@ -74,26 +77,21 @@ def search(raw_query):
     #tokens = [text.normalize(t) for t in text.tokenize(raw_query)]
     tokens = []
     done = False
-    query_scrubbed = text.normalize(raw_query.lower().replace('the university of', 'university of'))
+    query_scrubbed = text.normalize(raw_query).replace('the university of', 'university of').strip()
+    print query_scrubbed, '****'
     #minimum of 4 characters
-    for i in xrange(4, len(query_scrubbed) + 1, 2):
+    for i in xrange(4, len(query_scrubbed) + 2, 2):
         tokens.append(''.join(query_scrubbed[:i]))
     for token in tokens:
         if done is True:
             break
         if token in skip_words:
             continue
-        params = {
-            'query': token,
-            #corporate names only for now
-            'queryIndex': 'suggest10',
-            'rows': 30,
-            'wt': 'json',
-            'queryReturn': 'suggestall,idroot,auth',
-            'suggest': 'autoSubject',
-        }
         try:
-            resp = requests.get(api_base_url, params=params)
+            #FAST api requires spaces to be encoded as %20 rather than +
+            url = api_base_url + '?query=' + urllib.quote(token) + '&rows=30&queryReturn=suggestall%2Cidroot%2Cauth&suggest=autoSubject&queryIndex=suggest10&wt=json'
+            print url
+            resp = requests.get(url)
             print resp.url
             results = resp.json()
         except Exception, e:
@@ -102,19 +100,21 @@ def search(raw_query):
             match = False
             score2 = 0
             name = item.get('auth')
-            score = fuzz.ratio(raw_query, name)
+            score = fuzz.token_sort_ratio(raw_query, name)
             #Try the alternate if the score is low:
-            if score < 50:
+            alt = ''
+            if score < 90:
                 alternate = item.get('suggestall')
                 try:
                     alt = alternate[0]
-                    score2 = fuzz.ratio(raw_query, alt)
+                    score2 = fuzz.token_sort_ratio(raw_query, alt)
                 except IndexError:
                     pass
             high_score = max(score, score2)
+            print raw_query, name.encode('utf-8'), alt.encode('utf-8'), score, score2
             pid = item.get('idroot')
             #skip low scores
-            if high_score < 50:
+            if high_score < 90:
                 continue
             if text.normalize(name) == text.normalize(raw_query):
                 match = True
