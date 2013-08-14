@@ -9,7 +9,7 @@ and provides normalized scores across queries for reconciling in Refine.
 
 Run locally as:
 ~~~~
-$ python reconcile.py python reconcile.py --debug
+$ python reconcile.py --debug
 ~~~~
 
 Michael Stephens wrote a [demo reconcilliation service](https://github.com/mikejs/reconcile-demo) that this code is based on.
