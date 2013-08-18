@@ -5,8 +5,6 @@ An OpenRefine reconciliation service for [FAST](http://www.oclc.org/research/act
 The service queries the [FAST AutoSuggest API](http://www.oclc.org/developer/documentation/fast-linked-data-api/request-types)
 and provides normalized scores across queries for reconciling in Refine.
 
- * as of 8/13/13 only supports Corporate Name queries.  This can be expanded.
-
 Run locally as:
 ~~~~
 $ python reconcile.py --debug
