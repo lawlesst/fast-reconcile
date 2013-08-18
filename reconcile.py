@@ -69,6 +69,11 @@ refine_to_fast = [
         "index": "suggest11"
     },
     {
+        "id": "/fast/title",
+        "name": "Uniform Title",
+        "index": "suggest30"
+    },
+    {
         "id": "/fast/topical",
         "name": "Topical",
         "index": "suggest50"
