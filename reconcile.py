@@ -40,14 +40,60 @@ except ImportError:
 #Helper text processing
 import text
 
+#Map the FAST query indexes to service types
+default_query = {
+    "id": "/fast/all",
+    "name": "All FAST terms",
+    "index": "suggestall"
+}
+
+refine_to_fast = [
+    {
+        "id": "/fast/geographic",
+        "name": "Geographic Name",
+        "index": "suggest51"
+    },
+    {
+        "id": "/fast/corporate-name",
+        "name": "Corporate Name",
+        "index": "suggest10"
+    },
+    {
+        "id": "/fast/personal-name",
+        "name": "Personal Name",
+        "index": "suggest00"
+    },
+    {
+        "id": "/fast/event",
+        "name": "Event",
+        "index": "suggest11"
+    },
+    {
+        "id": "/fast/topical",
+        "name": "Topical",
+        "index": "suggest50"
+    },
+    {
+        "id": "/fast/form",
+        "name": "Form",
+        "index": "suggest55"
+    }
+]
+refine_to_fast.append(default_query)
+
+
+#Make a copy of the FAST mappings.
+#Minus the index for
+query_types = [{'id': item['id'], 'name': item['name']} for item in refine_to_fast]
+
 # Basic service metadata. There are a number of other documented options
 # but this is all we need for a simple service.
 metadata = {
-    "name": "Fast Corporate Name Reconciliation Service",
-    #ToDo add support for all types.
-    "defaultTypes": [
-        {"id": "/fast/corporate-name", "name": "Corporate Name"}
-    ],
+    "name": "Fast Reconciliation Service",
+    "defaultTypes": query_types,
+    "view": {
+        "url": "{{id}}"
+    }
 }
 
 
@@ -73,16 +119,23 @@ def jsonpify(obj):
         return jsonify(obj)
 
 
-def search(raw_query):
+def search(raw_query, query_type='/fast/all'):
     """
     Hit the FAST API for names.
     """
     out = []
     unique_fast_ids = []
     query = text.normalize(raw_query).replace('the university of', 'university of').strip()
+    query_type_meta = [i for i in refine_to_fast if i['id'] == query_type]
+    if query_type_meta == []:
+        query_type_meta = default_query
+    query_index = query_type_meta[0]['index']
     try:
         #FAST api requires spaces to be encoded as %20 rather than +
-        url = api_base_url + '?query=' + urllib.quote(query) + '&rows=30&queryReturn=suggestall%2Cidroot%2Cauth%2cscore&suggest=autoSubject&queryIndex=suggest10&wt=json'
+        url = api_base_url + '?query=' + urllib.quote(query)
+        url += '&rows=30&queryReturn=suggestall%2Cidroot%2Cauth%2cscore&suggest=autoSubject'
+        url += '&queryIndex=' + query_index + '&wt=json'
+        app.logger.debug("FAST API url is " + url)
         resp = requests.get(url)
         results = resp.json()
     except Exception, e:
@@ -117,34 +170,31 @@ def search(raw_query):
             "name": name,
             "score": score,
             "match": match,
-            "type": [
-                {
-                    "id": "/fast/corporate-name",
-                    "name": "Corporate Name",
-                }
-            ]
+            "type": query_type_meta
         }
         out.append(resource)
     #Sort this list by score
     sorted_out = sorted(out, key=itemgetter('score'), reverse=True)
     #Refine only will handle top three matches.
-    return sorted_out[:2]
+    return sorted_out[:3]
 
 
-@app.route("/fast-corporate/reconcile", methods=['POST', 'GET'])
+@app.route("/reconcile", methods=['POST', 'GET'])
 def reconcile():
+    #Single queries have been deprecated.  This can be removed.
     #Look first for form-param requests.
     query = request.form.get('query')
     if query is None:
         #Then normal get param.s
         query = request.args.get('query')
+        query_type = request.args.get('type', '/fast/all')
     if query:
         # If the 'query' param starts with a "{" then it is a JSON object
         # with the search string as the 'query' member. Otherwise,
         # the 'query' param is the search string itself.
         if query.startswith("{"):
             query = json.loads(query)['query']
-        results = search(query)
+        results = search(query, query_type=query_type)
         return jsonpify({"result": results})
     # If a 'queries' parameter is supplied then it is a dictionary
     # of (key, query) pairs representing a batch of queries. We
@@ -154,9 +204,15 @@ def reconcile():
         queries = json.loads(queries)
         results = {}
         for (key, query) in queries.items():
-            results[key] = {"result": search(query['query'])}
+            qtype = query.get('type')
+            #If no type is specified this is likely to be the initial query
+            #so lets return the service metadata so users can choose what
+            #FAST index to use.
+            if qtype is None:
+                return jsonpify(metadata)
+            data = search(query['query'], query_type=qtype)
+            results[key] = {"result": data}
         return jsonpify(results)
-
     # If neither a 'query' nor 'queries' parameter is supplied then
     # we should return the service metadata.
     return jsonpify(metadata)
