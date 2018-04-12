@@ -181,7 +181,7 @@ def search(raw_query, query_type='/fast/all'):
     #Sort this list by score
     sorted_out = sorted(out, key=itemgetter('score'), reverse=True)
     #Refine only will handle top three matches.
-    return sorted_out[:3]
+    return sorted_out[:6]
 
 
 @app.route("/reconcile", methods=['POST', 'GET'])
