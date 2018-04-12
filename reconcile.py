@@ -15,7 +15,7 @@ from flask import jsonify
 
 import json
 from operator import itemgetter
-import urllib
+import urllib.request, urllib.parse, urllib.error
 
 #For scoring results
 from fuzzywuzzy import fuzz
@@ -137,13 +137,13 @@ def search(raw_query, query_type='/fast/all'):
     query_index = query_type_meta[0]['index']
     try:
         #FAST api requires spaces to be encoded as %20 rather than +
-        url = api_base_url + '?query=' + urllib.quote(query)
+        url = api_base_url + '?query=' + urllib.parse.quote(query)
         url += '&rows=30&queryReturn=suggestall%2Cidroot%2Cauth%2cscore&suggest=autoSubject'
         url += '&queryIndex=' + query_index + '&wt=json'
         app.logger.debug("FAST API url is " + url)
         resp = requests.get(url)
         results = resp.json()
-    except Exception, e:
+    except Exception as e:
         app.logger.warning(e)
         return out
     for position, item in enumerate(results['response']['docs']):
@@ -208,7 +208,7 @@ def reconcile():
     if queries:
         queries = json.loads(queries)
         results = {}
-        for (key, query) in queries.items():
+        for (key, query) in list(queries.items()):
             qtype = query.get('type')
             #If no type is specified this is likely to be the initial query
             #so lets return the service metadata so users can choose what
@@ -228,4 +228,4 @@ if __name__ == '__main__':
     oparser.add_option('-d', '--debug', action='store_true', default=False)
     opts, args = oparser.parse_args()
     app.debug = opts.debug
-    app.run(host='0.0.0.0')
+    app.run(host='127.0.0.1')
