@@ -2,7 +2,7 @@
 
 _September 2024_ 
 
-This repository was created in 2023 as a quick example of how to develop a [reconciliation service](https://openrefine.org/docs/manual/reconciling) for [OpenRefine](https://openrefine.org/) that allows for resolving raw text strings [OCLC FAST](http://www.oclc.org/research/activities/fast.html?urlm=159754) identifiers. A lot has changed since the with Open Refine, FAST (I think) and Python. I've made minimal changes to update it to run with Python 3.12 but the code should serve as a reference more than a tool that can be used out of the box.
+This repository was created in 2013 as a quick example of how to develop a [reconciliation service](https://openrefine.org/docs/manual/reconciling) for [OpenRefine](https://openrefine.org/) that allows for resolving raw text strings to [OCLC FAST](http://www.oclc.org/research/activities/fast.html?urlm=159754) identifiers. A lot has changed since the with Open Refine, FAST (I think) and Python. I've made minimal changes to update it to run with Python 3.12 but the code here should be used for reference purposes only.
 
 -----
 
