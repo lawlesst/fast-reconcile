@@ -11,8 +11,6 @@ def normalize(text):
     spaces, removing symbols, diacritical marks (umlauts) and
     converting all newlines etc. to single spaces.
     """
-    if not isinstance(text, unicode):
-        text = unicode(text)
     text = text.lower()
     decomposed = ucnorm('NFKD', text)
     filtered = []
