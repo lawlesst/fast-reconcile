@@ -1,9 +1,33 @@
 """
-An OpenRefine reconciliation service for the API provided by
-OCLC for FAST.
+An OpenRefine reconciliation service for the API provided by OCLC for FAST.
+This module provides a Flask web service that interfaces with the FAST API to 
+perform reconciliation of terms. It supports both single and batch queries, 
+returning results in a format compatible with OpenRefine's reconciliation 
+service.
+Classes:
+    None
+Functions:
+    make_uri(fast_id)
+        Prepare a FAST URL from the ID returned by the API.
+    jsonpify(obj)
+        Helper to support JSONP responses.
+    search(raw_query, query_type='/fast/all')
+        Perform a search against the FAST API for the given query and query type.
+    reconcile()
+        Handle reconciliation requests from OpenRefine, supporting both single 
+        and batch queries.
+Variables:
+    app (Flask): The Flask application instance.
+    api_base_url (str): Base URL for the FAST API.
+    fast_uri_base (str): Base URL for constructing FAST URIs.
+    default_query (dict): Default query type for the reconciliation service.
+    refine_to_fast (list): List of mappings from OpenRefine query types to FAST 
+        query indexes.
+    query_types (list): List of query types without indexes for service metadata.
+    metadata (dict): Basic service metadata for the reconciliation service.
 
 See API documentation:
-http://www.oclc.org/developer/documentation/fast-linked-data-api/request-types
+https://www.oclc.org/developer/api/oclc-apis/fast-api/assign-fast.en.html
 
 This code is adapted from Michael Stephens:
 https://github.com/mikejs/reconcile-demo
@@ -18,9 +42,11 @@ from operator import itemgetter
 import urllib.request, urllib.parse, urllib.error
 
 #For scoring results
-from fuzzywuzzy import fuzz
+from thefuzz import fuzz
 import requests
+import requests_cache
 
+#Create the Flask app
 app = Flask(__name__)
 
 #some config
@@ -106,6 +132,12 @@ def make_uri(fast_id):
     """
     Prepare a FAST url from the ID returned by the API.
     """
+    if isinstance(fast_id, list):
+    # Handle the case where fast_id is a list
+        fast_id = fast_id[0]  # Example: take the first element of the list
+    if not isinstance(fast_id, str):
+        raise ValueError("fast_id must be a string or a list containing a string")
+    
     fid = fast_id.lstrip('fst').lstrip('0')
     fast_uri = fast_uri_base.format(fid)
     return fast_uri
@@ -138,7 +170,7 @@ def search(raw_query, query_type='/fast/all'):
     try:
         #FAST api requires spaces to be encoded as %20 rather than +
         url = api_base_url + '?query=' + urllib.parse.quote(query)
-        url += '&rows=30&queryReturn=suggestall%2Cidroot%2Cauth%2cscore&suggest=autoSubject'
+        url += '&rows=20&queryReturn=suggestall%2Cidroot%2Cauth%2Cscore&suggest=autoSubject'
         url += '&queryIndex=' + query_index + '&wt=json'
         app.logger.debug("FAST API url is " + url)
         resp = requests.get(url)
